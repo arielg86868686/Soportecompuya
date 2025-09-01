@@ -153,9 +153,19 @@
         let currentKey = '';
         let currentChatDocRef = null;
 
+        // Renders a generic error message.
+        const renderError = (message) => {
+            appDiv.innerHTML = `<p class="error-message text-center p-8">${message}</p>`;
+        };
+
         // Initializes Firebase and handles user authentication.
         const initializeFirebase = async () => {
             try {
+                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
+                    renderError("Error: La configuración de Firebase no está disponible. Por favor, asegúrate de que el entorno la proporcione.");
+                    return;
+                }
+                
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -171,10 +181,10 @@
                 renderForm();
             } catch (e) {
                 console.error("Error al inicializar Firebase o al autenticar:", e);
-                renderError("Hubo un error al iniciar el chat. Por favor, intenta de nuevo más tarde.");
+                renderError("Hubo un error al iniciar el chat. Por favor, intenta de nuevo más tarde. (auth/invalid-api-key)");
             }
         };
-
+        
         // Renders the initial form to enter the chat key.
         const renderForm = () => {
             appDiv.innerHTML = `
