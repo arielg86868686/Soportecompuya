@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Privado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .container {
+            background-color: #2a2a4a;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 600px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background-color: #16162a;
+            padding: 1.5rem;
+            text-align: center;
+            border-bottom: 2px solid #3a3a5a;
+        }
+        .chat-area {
+            flex-grow: 1;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            max-height: 70vh;
+            gap: 0.75rem;
+        }
+        .message-box {
+            background-color: #3a3a5a;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .message-box.mine {
+            background-color: #5b21b6;
+            align-self: flex-end;
+        }
+        .message-box.other {
+            background-color: #4338ca;
+            align-self: flex-start;
+        }
+        .sender {
+            font-size: 0.8rem;
+            color: #a0a0b0;
+            margin-bottom: 0.25rem;
+        }
+        .input-area {
+            display: flex;
+            padding: 1rem;
+            border-top: 2px solid #3a3a5a;
+            background-color: #2a2a4a;
+        }
+        .input-area input {
+            flex-grow: 1;
+            background-color: #1a1a2e;
+            border: 1px solid #4a4a6a;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            color: white;
+            outline: none;
+        }
+        .input-area button {
+            background-color: #6d28d9;
+            color: white;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            margin-left: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .input-area button:hover {
+            background-color: #5b21b6;
+        }
+        .form-area {
+            padding: 2rem;
+            text-align: center;
+        }
+        .form-area input {
+            background-color: #1a1a2e;
+            border: 1px solid #4a4a6a;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            color: white;
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 1rem;
+            outline: none;
+        }
+        .form-area button {
+            background-color: #4338ca;
+            color: white;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .form-area button:hover {
+            background-color: #312e81;
+        }
+        .error-message {
+            color: #fca5a5;
+            margin-top: 1rem;
+        }
+        .user-id-display {
+            font-size: 0.8rem;
+            color: #a0a0b0;
+            text-align: center;
+            padding: 0.5rem 0;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="container">
+        <!-- Contenido de la aplicación -->
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, getDocs, setDoc, doc, where, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+        // Global variables for Firebase configuration, provided by the Canvas environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        const appDiv = document.getElementById('app');
+        let currentKey = '';
+        let currentChatDocRef = null;
+
+        // --- Core Functions ---
+        const initializeFirebase = async () => {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                isAuthReady = true;
+
+                renderForm();
+            } catch (e) {
+                console.error("Error al inicializar Firebase o al autenticar:", e);
+                renderError("Hubo un error al iniciar el chat. Por favor, intenta de nuevo más tarde.");
+            }
+        };
+
+        const renderForm = () => {
+            appDiv.innerHTML = `
+                <div class="form-area">
+                    <h1 class="text-3xl font-bold mb-4">Chat Privado</h1>
+                    <p class="mb-4 text-sm text-gray-400">Para iniciar o unirte a un chat, ingresa una palabra clave.</p>
+                    <input type="text" id="chat-key" placeholder="Ingresa la palabra clave" class="rounded-lg px-4 py-2 w-full text-center">
+                    <button id="join-chat-btn" class="mt-4">Unirse al Chat</button>
+                    <div class="user-id-display">ID de usuario: <span id="user-id-text">${userId}</span></div>
+                    <p id="error-message" class="error-message"></p>
+                </div>
+            `;
+
+            document.getElementById('join-chat-btn').addEventListener('click', handleJoinChat);
+        };
+
+        const renderChat = () => {
+            appDiv.innerHTML = `
+                <div class="header">
+                    <h2 class="text-2xl font-bold">Chat: ${currentKey}</h2>
+                    <div class="user-id-display">ID de usuario: <span id="user-id-text">${userId}</span></div>
+                </div>
+                <div id="chat-messages" class="chat-area">
+                    <!-- Mensajes aquí -->
+                </div>
+                <div class="input-area">
+                    <input type="text" id="message-input" placeholder="Escribe un mensaje...">
+                    <button id="send-button">Enviar</button>
+                </div>
+            `;
+
+            document.getElementById('send-button').addEventListener('click', handleSendMessage);
+            document.getElementById('message-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleSendMessage();
+                }
+            });
+
+            startChatListener();
+        };
+
+        const handleJoinChat = async () => {
+            const chatKeyInput = document.getElementById('chat-key');
+            currentKey = chatKeyInput.value.trim().toLowerCase();
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.textContent = '';
+
+            if (!currentKey) {
+                errorMessage.textContent = 'Por favor, ingresa una palabra clave válida.';
+                return;
+            }
+
+            try {
+                const chatRef = collection(db, `artifacts/${appId}/public/data/chats`);
+                const q = query(chatRef, where("key", "==", currentKey));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    // Si no existe, crea un nuevo chat
+                    currentChatDocRef = doc(chatRef, currentKey);
+                    await setDoc(currentChatDocRef, {
+                        key: currentKey,
+                        createdAt: new Date()
+                    });
+                } else {
+                    // Si existe, únete al chat existente
+                    currentChatDocRef = querySnapshot.docs[0].ref;
+                }
+
+                renderChat();
+
+            } catch (e) {
+                console.error("Error al unirse o crear el chat:", e);
+                errorMessage.textContent = "Error al unirse al chat. Intenta de nuevo.";
+            }
+        };
+
+        const startChatListener = () => {
+            if (!currentChatDocRef) {
+                console.error("No hay un documento de chat para escuchar.");
+                return;
+            }
+
+            const messagesCollectionRef = collection(db, `${currentChatDocRef.path}/messages`);
+            const q = query(messagesCollectionRef, orderBy("timestamp"));
+
+            onSnapshot(q, (snapshot) => {
+                const chatMessagesDiv = document.getElementById('chat-messages');
+                if (!chatMessagesDiv) return;
+
+                const messages = [];
+                snapshot.forEach(doc => {
+                    messages.push(doc.data());
+                });
+                displayMessages(messages);
+            });
+        };
+
+        const displayMessages = (messages) => {
+            const chatMessagesDiv = document.getElementById('chat-messages');
+            chatMessagesDiv.innerHTML = ''; // Limpia el área de mensajes
+
+            messages.forEach(msg => {
+                const isMine = msg.senderId === userId;
+                const messageClass = isMine ? 'mine' : 'other';
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-box ${messageClass}`;
+                
+                const senderSpan = document.createElement('div');
+                senderSpan.className = 'sender';
+                senderSpan.textContent = isMine ? 'Tú' : 'Otro';
+
+                const contentP = document.createElement('p');
+                contentP.textContent = msg.text;
+
+                messageDiv.appendChild(senderSpan);
+                messageDiv.appendChild(contentP);
+                chatMessagesDiv.appendChild(messageDiv);
+            });
+
+            // Scroll al final del chat
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        };
+
+        const handleSendMessage = async () => {
+            const messageInput = document.getElementById('message-input');
+            const messageText = messageInput.value.trim();
+
+            if (messageText && currentChatDocRef) {
+                try {
+                    const messagesCollectionRef = collection(db, `${currentChatDocRef.path}/messages`);
+                    await addDoc(messagesCollectionRef, {
+                        text: messageText,
+                        senderId: userId,
+                        timestamp: new Date()
+                    });
+                    messageInput.value = '';
+                } catch (e) {
+                    console.error("Error al enviar el mensaje:", e);
+                    // Puedes agregar un mensaje de error visible al usuario aquí si lo deseas
+                }
+            }
+        };
+
+        // Initialize the app
+        window.onload = initializeFirebase;
+    </script>
+</body>
+</html>
