@@ -140,8 +140,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, getDocs, setDoc, doc, where, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, getDoc, setDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global variables for Firebase configuration, provided by the Canvas environment.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -150,19 +149,18 @@
 
         let app, db, auth;
         let userId = null;
-        let isAuthReady = false;
-
         const appDiv = document.getElementById('app');
         let currentKey = '';
         let currentChatDocRef = null;
 
-        // --- Core Functions ---
+        // Initializes Firebase and handles user authentication.
         const initializeFirebase = async () => {
             try {
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
+                // Authenticate user with custom token or anonymously.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -170,8 +168,6 @@
                 }
 
                 userId = auth.currentUser?.uid || crypto.randomUUID();
-                isAuthReady = true;
-
                 renderForm();
             } catch (e) {
                 console.error("Error al inicializar Firebase o al autenticar:", e);
@@ -179,6 +175,7 @@
             }
         };
 
+        // Renders the initial form to enter the chat key.
         const renderForm = () => {
             appDiv.innerHTML = `
                 <div class="form-area">
@@ -190,10 +187,10 @@
                     <p id="error-message" class="error-message"></p>
                 </div>
             `;
-
             document.getElementById('join-chat-btn').addEventListener('click', handleJoinChat);
         };
 
+        // Renders the main chat interface.
         const renderChat = () => {
             appDiv.innerHTML = `
                 <div class="header">
@@ -208,17 +205,16 @@
                     <button id="send-button">Enviar</button>
                 </div>
             `;
-
             document.getElementById('send-button').addEventListener('click', handleSendMessage);
             document.getElementById('message-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     handleSendMessage();
                 }
             });
-
             startChatListener();
         };
 
+        // Handles the logic for joining or creating a chat.
         const handleJoinChat = async () => {
             const chatKeyInput = document.getElementById('chat-key');
             currentKey = chatKeyInput.value.trim().toLowerCase();
@@ -231,30 +227,26 @@
             }
 
             try {
-                const chatRef = collection(db, `artifacts/${appId}/public/data/chats`);
-                const q = query(chatRef, where("key", "==", currentKey));
-                const querySnapshot = await getDocs(q);
+                // Use the chat key as the document ID for direct access.
+                const chatDocRef = doc(db, `artifacts/${appId}/public/data/chats`, currentKey);
+                const chatDocSnap = await getDoc(chatDocRef);
 
-                if (querySnapshot.empty) {
-                    // Si no existe, crea un nuevo chat
-                    currentChatDocRef = doc(chatRef, currentKey);
-                    await setDoc(currentChatDocRef, {
+                if (!chatDocSnap.exists()) {
+                    // If the chat doesn't exist, create it.
+                    await setDoc(chatDocRef, {
                         key: currentKey,
                         createdAt: new Date()
                     });
-                } else {
-                    // Si existe, únete al chat existente
-                    currentChatDocRef = querySnapshot.docs[0].ref;
                 }
-
+                currentChatDocRef = chatDocRef;
                 renderChat();
-
             } catch (e) {
                 console.error("Error al unirse o crear el chat:", e);
                 errorMessage.textContent = "Error al unirse al chat. Intenta de nuevo.";
             }
         };
 
+        // Sets up the real-time listener for chat messages.
         const startChatListener = () => {
             if (!currentChatDocRef) {
                 console.error("No hay un documento de chat para escuchar.");
@@ -262,7 +254,7 @@
             }
 
             const messagesCollectionRef = collection(db, `${currentChatDocRef.path}/messages`);
-            const q = query(messagesCollectionRef, orderBy("timestamp"));
+            const q = query(messagesCollectionRef); // No usar orderBy para evitar la necesidad de índices.
 
             onSnapshot(q, (snapshot) => {
                 const chatMessagesDiv = document.getElementById('chat-messages');
@@ -272,10 +264,19 @@
                 snapshot.forEach(doc => {
                     messages.push(doc.data());
                 });
+
+                // Ordenar mensajes en el cliente por el timestamp para garantizar el orden.
+                messages.sort((a, b) => {
+                    const timeA = a.timestamp ? a.timestamp.toMillis() : 0;
+                    const timeB = b.timestamp ? b.timestamp.toMillis() : 0;
+                    return timeA - timeB;
+                });
+                
                 displayMessages(messages);
             });
         };
 
+        // Displays messages in the chat area.
         const displayMessages = (messages) => {
             const chatMessagesDiv = document.getElementById('chat-messages');
             chatMessagesDiv.innerHTML = ''; // Limpia el área de mensajes
@@ -298,10 +299,11 @@
                 chatMessagesDiv.appendChild(messageDiv);
             });
 
-            // Scroll al final del chat
+            // Scroll to the bottom of the chat area.
             chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
         };
 
+        // Handles sending a new message.
         const handleSendMessage = async () => {
             const messageInput = document.getElementById('message-input');
             const messageText = messageInput.value.trim();
@@ -317,12 +319,11 @@
                     messageInput.value = '';
                 } catch (e) {
                     console.error("Error al enviar el mensaje:", e);
-                    // Puedes agregar un mensaje de error visible al usuario aquí si lo deseas
                 }
             }
         };
 
-        // Initialize the app
+        // Initialize the app on window load.
         window.onload = initializeFirebase;
     </script>
 </body>
